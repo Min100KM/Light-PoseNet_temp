@@ -41,37 +41,19 @@ teacher = create_model(opt_T)
 teacher.netG.load_state_dict(torch.load(opt_T.T_path))
 
 # Set Student Model
-student = KD_create_Smodel(opt)  # Criterion : KDLoss, Optimizer : Adam
+student = create_model(opt)
 
 # Teacher 미리 계산 list
 SS_pred_T = []  # Teacher prediction
 SS_feature_T = []  # Teacher featuremap
 SS_gt = []  # Batch groundtruth
 feature_hint = []  # Teacher hint feature
-
-with torch.no_grad():
-    for i, data in enumerate(dataset):
-        teacher.set_input(data)
-        teacher.test()
-
-        pred_T, hint, feature_T = teacher.pred_B  # self.cls3_fc(output_5b), output_5b, feature_T
-
-        # To tensor
-        pred_T[0] = torch.tensor(pred_T[0].detach())
-        pred_T[1] = torch.tensor(pred_T[1].detach())
-        pred_T = torch.cat(pred_T, dim=1)  # [32, 7]
-
-        hint = hint.detach()
-        feature_T = feature_T.detach()
-        gt = torch.tensor(data['B'])
-
-        SS_pred_T.append(util.getSelfSimilarity(pred_T))
-        SS_feature_T.append(util.getSelfSimilarity(feature_T))
-        SS_gt.append(util.getSelfSimilarity(gt))
-        feature_hint.append(hint)
-
 ## KD-Student Training
-
+"""
+        with torch.no_grad():
+            feat_t, output_t = model_t(inputs, is_feat=True)
+            feat_t = [f.detach() for f in feat_t]
+"""
 for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
     epoch_start_time = time.time()
     epoch_iter = 0

@@ -1,6 +1,6 @@
 from .base_options import BaseOptions
 
-class TrainOptions(BaseOptions):
+class KDTrainOptions(BaseOptions):
     def initialize(self):
         BaseOptions.initialize(self)
         self.parser.add_argument('--display_freq', type=int, default=100, help='frequency of showing training results on screen')
@@ -27,10 +27,17 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--sigma', type=float, default=1, help='Hyperparameter for CSLoss')
         self.parser.add_argument('--alpha', type=float, default=0.7, help='Hyperparameter for soft and hard loss proportion')
         self.parser.add_argument('--T_path', type=str, help='Path of teacher network')
-        self.parser.add_argument('--T_model', type=str, default='posenet',
-                                 help='chooses which model to use. [posenet | poselstm]')
-        self.parser.add_argument('--LossF', type=str, default='RofR',
-                                 help='chooses which Loss function to use. [ RofR ]')
+        self.parser.add_argument('--T_model', type=str, default='resnet50',
+                                 help='chooses which model to use. [ resnet34 | resnet50 | resnet101 ]')
+
+        self.parser.add_argument('--hintmodule', nargs="+", type=int, default='5',
+                                 help='chooses which module feature maps to use as hint and guided. [ 1 | 2 | 3 | 4 | 5 ]')
+
+        self.parser.add_argument('--CSmodule', nargs="+" ,type=int, default='3',
+                                 help='chooses which module feature maps to use as CSloss. [ 1 | 2 | 3 | 4 | 5 ]')
+        self.parser.add_argument('--KLCS', action='store_true',
+                                 help='if true, Use KLloss at CScriterion')
+
 
         self.isTrain = True
         self.isKD = True

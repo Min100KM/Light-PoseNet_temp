@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import os
 from collections import OrderedDict
@@ -10,6 +11,39 @@ from .base_model import BaseModel
 from . import resPoseNet
 import pickle
 import numpy
+
+
+
+class DistillKL_Feature(nn.Module):
+    # Distilling the Knowledge in a ResNet Module (Hint / Guided Module)
+    def __init__(self):
+        super(DistillKL_Feature, self).__init__()
+    def forward(self, feature_T, feature_S):
+        feature_S = F.normalize(feature_S, p=2, dim=1)
+        feature_T = F.normalize(feature_T, p=2, dim=1)
+
+        feature_S = F.log_softmax(feature_S, dim=1)
+        feature_T = F.softmax(feature_T, dim=1)
+        loss = F.kl_div(feature_S, feature_T, reduction='batchmean')
+        return loss
+
+
+class Distill_CS(nn.Module):
+    def __init__(self, isKL):
+        super(Distill_CS, self).__init__()
+        self.isKL = isKL
+        self.MSE = torch.nn.MSELoss
+    def forward(self, CS_T, CS_S):
+        if self.isKL:
+            CS_S = F.log_softmax(CS_S, dim=1)
+            CS_T = F.log_softmax(CS_T, dim=1)
+
+            loss = F.kl_div(CS_S, CS_T, reduction='batchmean')
+            return loss
+        else:
+            loss = self.MSE(CS_S, CS_T)
+            return loss
+
 
 
 class PoseNetModel(BaseModel):
@@ -36,17 +70,12 @@ class PoseNetModel(BaseModel):
             print('initializing the weights from ' + opt.init_weights)
         self.mean_image = np.load(os.path.join(opt.dataroot, 'mean_image.npy'))
 
-        if opt.isKD:
-            self.netG = resPoseNet.define_network(opt.input_nc, opt.model,
+
+        self.netG = resPoseNet.define_network(opt.input_nc, opt.model,
                                                 init_from=resnet_weights, isTest=not self.isTrain,
-                                                #isKD=self.isKD,
+                                                isKD=self.isKD,
                                                 gpu_ids=self.gpu_ids)
 
-        else:  # !KD  def define_network(input_nc, model, init_from=None, isTest=False, gpu_ids=[]):
-            self.netG = resPoseNet.define_network(opt.input_nc, opt.model,
-                                                init_from=resnet_weights, isTest=not self.isTrain,
-                                                #isKD=self.isKD,
-                                                gpu_ids=self.gpu_ids)
 
         if not self.isTrain or opt.continue_train:
             if not opt.isKD:  # 얘 추가
@@ -55,7 +84,26 @@ class PoseNetModel(BaseModel):
         if self.isTrain:
             self.old_lr = opt.lr
             # define loss functions
-            self.criterion = torch.nn.MSELoss()
+
+            criterion = torch.nn.ModuleList([])
+
+            criterion_MSE = torch.nn.MSELoss()
+            criterion_KLfeatures = DistillKL_Feature()
+            criterion_CS = Distill_CS()
+
+            if self.isKD:
+                criterion.append(criterion_MSE)
+                criterion.append(criterion_KLfeatures)
+                criterion.append(criterion_CS)
+
+                self.hintmodule = opt.hintmodule
+                self.CSmodule = opt.CSmodule
+
+            else:
+                criterion.append(criterion_MSE)
+
+            self.criterion = criterion
+            self.criterion.cuda()
 
             # initialize optimizers
             self.schedulers = []
@@ -83,7 +131,12 @@ class PoseNetModel(BaseModel):
         self.input_B.resize_(input_B.size()).copy_(input_B)
 
     def forward(self):
-        self.pred_B = self.netG(self.input_A)
+        if self.isKD:
+            # output, [feature1] + [feature2] + [feature3] + [feature4] + [feature5]
+            self.pred_B, self.features = self.netG(self.input_A)
+
+        else:
+            self.pred_B = self.netG(self.input_A)
 
     # no backprop gradients
     def test(self):
@@ -95,11 +148,51 @@ class PoseNetModel(BaseModel):
 
     def backward(self):
         self.PoseNet_backward()
+"""
+            if self.isKD:
+                criterion.append(criterion_MSE)
+                criterion.append(criterion_KLfeatures)
+                criterion.append(criterion_CS)
 
+            else:
+                criterion.append(criterion_MSE)
+
+            self.criterion = criterion
+            self.criterion.cuda()
+"""
     def PoseNet_backward(self):
-        self.loss_G = 0
+        self.loss_Gt = 0
         self.loss_pos = 0
         self.loss_ori = 0
+
+        if self.isKD:
+            self.loss_feature = 0
+            self.loss_CS = 0
+
+            criterion_MSE, criterion_KL, criterion_CS = self.criterion()
+            # Gt_Loss
+            mse_pos = criterion_MSE(self.pred_B[0], self.input_B[:, 0:3])
+            ori_gt = F.normalize(self.input_B[:, 3:], p=2, dim=1)
+            mse_ori = self.criterion(self.pred_B[1], ori_gt)
+            self.loss_Gt = (mse_pos + mse_ori * self.opt.beta)
+            self.loss_pos = mse_pos.item()
+            self.loss_ori += mse_ori.item() * self.opt.beta
+
+            #Feature_Loss
+            """
+            def forward(self, g_s, g_t):
+                g_t = [g_t[i] for i in self.guide_layers]
+                g_s = [g_s[i] for i in self.hint_layers]
+                loss = self.attention(g_s, g_t)
+                return sum(loss)
+                
+                self.hintmodule = opt.hintmodule
+                self.CSmodule = opt.CSmodule
+            """
+
+        else:
+            criterion = self.criterion()
+
 
         mse_pos = self.criterion(self.pred_B[0], self.input_B[:, 0:3])
         ori_gt = F.normalize(self.input_B[:, 3:], p=2, dim=1)
@@ -110,20 +203,6 @@ class PoseNetModel(BaseModel):
 
         self.loss_G.backward()
 
-    def onlyStudent_backward(self):
-
-        self.loss_G = 0
-        self.loss_pos = 0
-        self.loss_ori = 0
-
-        mse_pos = self.criterion(self.pred_B[0], self.input_B[:, 0:3])
-        ori_gt = F.normalize(self.input_B[:, 3:], p=2, dim=1)
-        mse_ori = self.criterion(self.pred_B[1], ori_gt)
-        self.loss_G = (mse_pos + mse_ori * self.opt.beta)
-        self.loss_pos = mse_pos.item()
-        self.loss_ori = mse_ori.item() * self.opt.beta
-
-        self.loss_G.backward()
 
     def optimize_parameters(self):
         self.forward()

@@ -85,48 +85,15 @@ def getSelfSimilarity(input_m):
     # F.pdist => 1*(_nC_2) //
     res = pairwise_cosine_similarity(input_m)  # N*N
     # res = res.view([-1])
-    """
-    n = semi_res.shape[0]
-    res = torch.ones((n * (n - 1)) / 2)
-    idx = 0
-    for i in range(n):
-        for j in range(i + 1, n):
-            res[idx] = (semi_res[i][j])
-            idx = idx + 1
-
-    # Normalize to 0~1
-    # res_min = res.min()
-    # res_max = res.max()
-    # res = (res - res_min) / (res_max - res_min)
-    """
     return res
 
 
 def getSelfCrossSimilarity(ss1, ss2):
-    #ss1 = getSelfSimilarity(feature_1)
-    # ss1 = torch.as_tensor(ss1, dtype=torch.float)
-    #ss2 = getSelfSimilarity(feature_2)
-    # ss2 = torch.as_tensor(ss2, dtype=torch.float)
-    # SelfCrossSimilarity = torch.nn.CosineSimilarity(dim=1, eps=1e-08)(ss1,ss2)
-    """
-    lnInput=torch.abs(torch.exp(ss1)-torch.exp(ss2))
-    lnInput=lnInput/(torch.max(lnInput)-torch.min(lnInput))
-    SelfCrossSimilarity = - (torch.log(lnInput))
+
+    cosine = torch.nn.CosineSimilarity()
+    SelfCrossSimilarity = cosine(ss1, ss2)
     SelfCrossSimilarity = SelfCrossSimilarity.view([-1])
-    #print(SelfCrossSimilarity.shape)
-    """
-    sml1 = torch.nn.SmoothL1Loss()
-    SelfCrossSimilarity = sml1(ss1, ss2)
-    SelfCrossSimilarity = SelfCrossSimilarity.view([-1])
-    """
-    n=ss1.shape[0]
-    SelfCrossSimilarity = torch.ones((n * (n - 1)) / 2)
-    idx = 0
-    for i in range(n):
-        for j in range(i + 1, n):
-            SelfCrossSimilarity[idx] = (semi_SelfCrossSimilarity[i][j])
-            idx = idx + 1
-    """
+
     return SelfCrossSimilarity
 
 

@@ -46,7 +46,7 @@ def get_scheduler(optimizer, opt):
     return scheduler
 
 
-def define_network(input_nc, model, init_from=None, isTest=False, gpu_ids=[]):
+def define_network(input_nc, model, init_from=None, isKD=False, isTest=False, gpu_ids=[]):
     netG = None
     use_gpu = len(gpu_ids) > 0
 
@@ -54,8 +54,7 @@ def define_network(input_nc, model, init_from=None, isTest=False, gpu_ids=[]):
         assert (torch.cuda.is_available())
 
     if model == 'resnet18':
-        netG = ResNet18(3, ResBlock, weights=init_from)
-        #netG = PoseNet(input_nc, weights=init_from, isTest=isTest, gpu_ids=gpu_ids)
+        netG = ResNet18(3, ResBlock, weights=init_from, isKD=False)
 
     elif model == 'resnet34':
         netG = ResNet34(3, ResBlock, weights=init_from)
@@ -168,8 +167,10 @@ class ResBottleneckBlock(nn.Module):
 
 
 class ResNet18(nn.Module):
-    def __init__(self, in_channels, resblock=ResBlock, weights=None):
+    def __init__(self, in_channels, resblock=ResBlock, weights=None, isKD=False):
         super().__init__()
+
+        self.isKD = isKD
 
         self.layer0 = nn.Sequential(
             weight_init_resnet("layer0" , nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3), weights=weights),
@@ -203,22 +204,28 @@ class ResNet18(nn.Module):
         self.fc = Regression(weights=None, input_cls=512, mid_cls=1024)
 
     def forward(self, input):
-        input = self.layer0(input)
-        input = self.layer1(input)
-        input = self.layer2(input)
-        input = self.layer3(input)
-        input = self.layer4(input)
-        input = self.gap(input)
+        feature1 = self.layer0(input)
+        feature2 = self.layer1(feature1)
+        feature3 = self.layer2(feature2)
+        feature4 = self.layer3(feature3)
+        feature5 = self.layer4(feature4)
+        feature6 = self.gap(feature5)
         #input = torch.flatten(input)
-        input = self.fc(input)
+        output = self.fc(feature6)
 
-        return input
+        if self.isKD:
+            return output, [feature1] + [feature2] + [feature3] + [feature4] + [feature5]
+        else:
+            return output
 
 
 
 class ResNet34(nn.Module):
-    def __init__(self, in_channels, resblock, weights):
+    def __init__(self, in_channels, resblock, weights, isKD=False):
         super().__init__()
+
+        self.isKD = isKD
+
         self.layer0 = nn.Sequential(
             weight_init_resnet("layer0", nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3), weights=weights),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
@@ -259,22 +266,28 @@ class ResNet34(nn.Module):
         self.fc = Regression(weights=None, input_cls=512, mid_cls=1024)
 
     def forward(self, input):
-        input = self.layer0(input)
-        input = self.layer1(input)
-        input = self.layer2(input)
-        input = self.layer3(input)
-        input = self.layer4(input)
-        input = self.gap(input)  # torch.Size([75, 512, 1, 1])
+        feature1 = self.layer0(input)
+        feature2 = self.layer1(feature1)
+        feature3 = self.layer2(feature2)
+        feature4 = self.layer3(feature3)
+        feature5 = self.layer4(feature4)
+        feature6 = self.gap(feature5)  # torch.Size([75, 512, 1, 1])
         #input = torch.flatten(input)
 
-        input = self.fc(input)
+        output = self.fc(feature6)
 
-        return input
+        if self.isKD:
+            return output, [feature1] + [feature2] + [feature3] + [feature4] + [feature5]
+        else:
+            return output
 
 
 class ResNet50(nn.Module):
-    def __init__(self, in_channels, resblock, weights):
+    def __init__(self, in_channels, resblock, weights, isKD=False):
         super().__init__()
+
+        self.isKD = isKD
+
         self.layer0 = nn.Sequential(
             weight_init_resnet("layer0", nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3), weights),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
@@ -317,22 +330,28 @@ class ResNet50(nn.Module):
         self.fc = Regression(weights=None, input_cls=2048, mid_cls=1024)
 
     def forward(self, input):
-        input = self.layer0(input)
-        input = self.layer1(input)
-        input = self.layer2(input)
-        input = self.layer3(input)
-        input = self.layer4(input)
-        input = self.gap(input)
+        feature1 = self.layer0(input)
+        feature2 = self.layer1(feature1)
+        feature3 = self.layer2(feature2)
+        feature4 = self.layer3(feature3)
+        feature5 = self.layer4(feature4)
+        feature6 = self.gap(feature5)
         #print("self.gap(input) :", self.gap(input).shape)
         #input = torch.flatten(input, start_dim=1)
-        input = self.fc(input)
+        output = self.fc(feature6)
 
-        return input
+        if self.isKD:
+            return output, [feature1] + [feature2] + [feature3] + [feature4] + [feature5]
+        else:
+            return output
 
 
 class ResNet101(nn.Module):
-    def __init__(self, in_channels, resblock, weights):
+    def __init__(self, in_channels, resblock, weights, isKD):
         super().__init__()
+
+        self.isKD = isKD
+
         self.layer0 = nn.Sequential(
             weight_init_resnet("layer0", nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3), weights=weights),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
@@ -372,16 +391,19 @@ class ResNet101(nn.Module):
         self.fc = Regression(weights=None, input_cls=2048, mid_cls=1024)
 
     def forward(self, input):
-        input = self.layer0(input)
-        input = self.layer1(input)
-        input = self.layer2(input)
-        input = self.layer3(input)
-        input = self.layer4(input)
-        input = self.gap(input)
+        feature1 = self.layer0(input)
+        feature2 = self.layer1(feature1)
+        feature3 = self.layer2(feature2)
+        feature4 = self.layer3(feature3)
+        feature5 = self.layer4(feature4)
+        feature6 = self.gap(feature5)
         #input = torch.flatten(input, start_dim=1)
-        input = self.fc(input)
+        output = self.fc(feature6)
 
-        return input
+        if self.isKD:
+            return output, [feature1] + [feature2] + [feature3] + [feature4] + [feature5]
+        else:
+            return output
 
 
 

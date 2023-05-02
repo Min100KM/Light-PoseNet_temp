@@ -1,13 +1,13 @@
 import time
-from options.KD_train_options import TrainOptions
+from options.KD_train_options import KDTrainOptions
 from data.data_loader import CreateDataLoader
-from models.models import create_model, KD_create_Smodel
+from models.models import create_model
 from util.visualizer import Visualizer
 import copy
 import util.util as util
 from PIL import Image
 
-opt = TrainOptions().parse()
+opt = KDTrainOptions().parse()
 import torch
 import numpy as np
 import random
